@@ -1,4 +1,4 @@
-package com.github.rkaahean.kafkatwitter;
+package com.github.rkaahean.kafkatwitterproducer;
 
 import com.google.common.collect.Lists;
 import com.twitter.hbc.ClientBuilder;
