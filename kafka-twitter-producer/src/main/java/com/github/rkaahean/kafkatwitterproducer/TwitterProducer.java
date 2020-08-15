@@ -1,5 +1,7 @@
 package com.github.rkaahean.kafkatwitterproducer;
 
+
+
 import com.google.common.collect.Lists;
 import com.twitter.hbc.ClientBuilder;
 import com.twitter.hbc.core.Client;

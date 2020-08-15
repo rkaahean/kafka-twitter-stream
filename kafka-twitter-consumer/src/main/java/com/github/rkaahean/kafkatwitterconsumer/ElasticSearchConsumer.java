@@ -37,8 +37,7 @@ public class ElasticSearchConsumer {
         // Need to pass JSON. Make sure "twitter" index is already created in ElasticSearch via
         // console
         IndexRequest indexRequest = new IndexRequest(
-                "twitter",
-                "tweets"
+                "twitter"
         ).source(jsonString, XContentType.JSON);
 
         IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);

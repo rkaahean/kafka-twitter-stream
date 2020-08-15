@@ -4,20 +4,26 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>kafka-twitter-producer</artifactId>
-
-    <parent>
-        <artifactId>kafka-twitter</artifactId>
-        <groupId>com.github.rkaahean</groupId>
-        <version>1.0</version>
-    </parent>
-
-    <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-    </properties>
-
-
+    <groupId>com.github.rkaahean</groupId>
+    <artifactId>kafka-twitter</artifactId>
+    <packaging>pom</packaging>
+    <version>1.0</version>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>8</source>
+                    <target>8</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <modules>
+        <module>kafka-twitter-consumer</module>
+        <module>kafka-twitter-producer</module>
+    </modules>
 
     <dependencies>
         <!-- https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients -->
