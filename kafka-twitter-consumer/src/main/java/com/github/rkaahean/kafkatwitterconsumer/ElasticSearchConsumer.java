@@ -1,11 +1,19 @@
 package com.github.rkaahean.kafkatwitterconsumer;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -20,6 +28,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Properties;
 
 public class ElasticSearchConsumer {
@@ -29,23 +39,73 @@ public class ElasticSearchConsumer {
         // Creating a Logger
         Logger logger = LoggerFactory.getLogger(ElasticSearchConsumer.class.getName());
 
-
+        // Creating the client that interacts with ElasticSearch
         RestHighLevelClient client = createClient();
 
-        String jsonString = "{ \"foo\": \"bar\"}";
+        // Creating the Kafka Consumer
+        KafkaConsumer<String, String> consumer = createConsumer("twitter_tweets");
 
-        // Need to pass JSON. Make sure "twitter" index is already created in ElasticSearch via
-        // console
-        IndexRequest indexRequest = new IndexRequest(
-                "twitter"
-        ).source(jsonString, XContentType.JSON);
+        while(true){
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100)); // new in Kafka 2.0.0
 
-        IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-        String id = indexResponse.getId();
-        logger.info(id);
+            Integer recordCount = records.count();
+            logger.info("Received: " + recordCount + " records.");
+
+            BulkRequest bulkRequest = new BulkRequest();
+
+            for (ConsumerRecord<String, String> record : records){
+
+                // The value to be inserted into elasticSearch
+                String jsonString = record.value();
+
+                // Insert to elasticsearch here
+                // Need to pass JSON. Make sure "twitter" index is already created in ElasticSearch via
+                // console
+
+                // In order to make consumer idempotent, 2 strategies.
+
+                // Kafka generic. In case you cannot find an ID
+                // String id = record.topic() + "_" + record.partition() + "_" + record.offset();
+
+                // Another strategy. Something that is specific to the twitter stream
+                // The id of the tweet!
+                try {
+                    String id = extractIdFromTweet(record.value());
+
+                    IndexRequest indexRequest = new IndexRequest(
+                            "twitter"
+                    ).source(jsonString, XContentType.JSON).id(id);
+
+                    // To add for bulk requesting
+                    bulkRequest.add(indexRequest);
+                } catch (NullPointerException e){
+                    // Occurs mostly because tweet does not have a good structure.
+                    // No id_str
+                    logger.warn("Skipping bad data: " + record.value());
+                }
+
+            }
+
+            // Only if we have non empty records
+            if (recordCount > 0) {
+                // Creating a Bulk Response
+                BulkResponse bulkItemResponses = client.bulk(bulkRequest, RequestOptions.DEFAULT);
+
+                // Committing manually
+                logger.info("Committing the offsets...");
+                consumer.commitSync();
+                logger.info("Offsets committed.");
+
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
 
         // Finally closing client gracefully
-        client.close();
+        // client.close();
     }
 
     public static Properties getCredentials(String location){
@@ -94,5 +154,38 @@ public class ElasticSearchConsumer {
                 );
 
         return new RestHighLevelClient(builder);
+    }
+
+    public static KafkaConsumer<String, String> createConsumer(String topic){
+
+        String bootstrapServers = "64.225.36.250:9092";
+        String groupId = "kafka-elasticsearch";
+
+        Properties properties = new Properties();
+
+        properties.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // disable auto-commit of records
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
+
+        // create consumer
+        KafkaConsumer<String,String> kafkaConsumer = new KafkaConsumer<String, String>(properties);
+
+        // subscribing to the consumer
+        kafkaConsumer.subscribe(Arrays.asList(topic));
+        return kafkaConsumer;
+    }
+
+    private static JsonParser jsonParser = new JsonParser();
+
+    private static String extractIdFromTweet(String tweetJson){
+        // gson
+        return jsonParser.parse(tweetJson)
+                .getAsJsonObject()
+                .get("id_str")
+                .getAsString();
     }
 }
